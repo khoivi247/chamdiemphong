@@ -1,6 +1,6 @@
 (function() {
         "use strict";
-        const state = { groups: [], criteria: [], activeGroup: 0, draft: null, token: "", gate: null, requestPending: false, gateRefreshing: false, toastTimer: 0 };
+        const state = { groups: [], criteria: [], activeGroup: 0, draft: null, token: "", gate: null, requestPending: false, toastTimer: 0, eventsBound: false };
         const DRAFT_KEY = "dorm-score-draft-v1";
         const $ = function(id) { return document.getElementById(id); };
 
@@ -32,18 +32,6 @@
             throw error;
           }).finally(function() {
             window.clearTimeout(timeout);
-          });
-        }
-
-        function loadAppState(token, retry) {
-          return apiCall("getAppState", { token: token }).catch(function(error) {
-            const canRetry = retry > 0 && (!error.status || error.status >= 500 || error.status === 408);
-            if (!canRetry) throw error;
-            return new Promise(function(resolve) {
-              window.setTimeout(resolve, 900);
-            }).then(function() {
-              return loadAppState(token, retry - 1);
-            });
           });
         }
 
@@ -95,36 +83,47 @@
         function start() {
           $("fatal").hidden = true;
           $("lockScreen").hidden = false;
-          $("unlockButton").hidden = true;
-          $("lockTitle").textContent = "Đang kết nối sổ chấm";
-          $("lockMessage").textContent = "Đang kiểm tra giờ nhập và tải danh sách phòng. Bản nháp trên thiết bị sẽ được giữ nguyên.";
-          state.token = sessionStorage.getItem("dorm-score-token") || "";
-          $("retryButton").disabled = true;
-          $("retryButton").textContent = "Đang kết nối…";
-          loadAppState(state.token, 1).then(function(data) {
-            if (!data || !Array.isArray(data.groups) || !Array.isArray(data.criteria) || !data.gate) {
-              throw new Error("Phản hồi khởi tạo thiếu danh sách phòng hoặc trạng thái khóa.");
-            }
-            state.groups = data.groups;
-            state.criteria = data.criteria;
-            state.draft = loadDraft();
-            fillMetaFields();
-            buildTabs();
-            renderGroup();
-            updateProgress();
-            $("app").hidden = true;
-            applyGate(data.gate);
-            window.setInterval(refreshGate, 20000);
-            window.setInterval(updateClocks, 1000);
-            bindEvents();
-          }).catch(showFatal).finally(function() {
-            $("retryButton").disabled = false;
-            $("retryButton").textContent = "Thử kết nối lại";
-          });
+          $("app").hidden = true;
+          $("lockTitle").textContent = "Sổ chấm đang khóa";
+          $("lockMessage").textContent = "Nhập key để mở giao diện và bắt đầu nhập điểm.";
+          $("unlockButton").hidden = false;
+          $("unlockButton").textContent = "Nhập key để mở";
+          $("lockClock").textContent = "ĐANG KHÓA";
+          state.token = "";
+          state.gate = null;
+          sessionStorage.removeItem("dorm-score-token");
           if (!state.eventsBound) {
+            bindEvents();
             $("retryButton").addEventListener("click", start);
             state.eventsBound = true;
           }
+        }
+
+        function initializeApp(data, token, expiresAt) {
+          if (!data || !Array.isArray(data.groups) || !Array.isArray(data.criteria) || !data.gate) {
+            throw new Error("Máy chủ trả thiếu dữ liệu bảng chấm. Hãy deploy phiên bản Apps Script mới nhất.");
+          }
+          if (typeof token !== "string" || !token || !Number.isFinite(expiresAt)) {
+            throw new Error("Máy chủ không trả về phiên ủy quyền hợp lệ.");
+          }
+          state.groups = data.groups;
+          state.criteria = data.criteria;
+          state.draft = loadDraft();
+          fillMetaFields();
+          buildTabs();
+          renderGroup();
+          updateProgress();
+          $("app").hidden = false;
+          $("fatal").hidden = true;
+          $("lockScreen").hidden = true;
+          state.gate = Object.assign({}, data.gate, { receivedAt: Date.now() });
+          state.token = token;
+          state.gate.authorizedUntil = expiresAt;
+          sessionStorage.setItem("dorm-score-token", token);
+          if (!state.expiryTimer) {
+            state.expiryTimer = window.setInterval(updateClocks, 1000);
+          }
+          applyGate(data.gate);
         }
 
         function buildTabs() {
@@ -291,25 +290,14 @@
           }
           $("app").hidden = !gate.open;
           $("lockScreen").hidden = gate.open;
-          $("unlockButton").hidden = false;
-          $("lockTitle").textContent = gate.open ? "Đang mở sổ chấm điểm" : "Đang ngoài giờ nhập";
-          $("lockMessage").textContent = gate.open
-            ? "Giao diện chấm điểm đã sẵn sàng. Bản nháp được giữ trên thiết bị này."
-            : "Giao diện chấm điểm sẽ mở trong các khung giờ quy định. Bản nháp chưa lưu vẫn được giữ trên thiết bị.";
+          $("unlockButton").hidden = gate.open;
+          $("lockTitle").textContent = "Sổ chấm đang khóa";
+          $("lockMessage").textContent = "Nhập key để mở giao diện và bắt đầu nhập điểm.";
+          $("lockClock").textContent = gate.open ? "ĐÃ MỞ" : "ĐANG KHÓA";
           $("statusText").textContent = !gate.open
-            ? "Ngoài giờ nhập"
-            : gate.scheduled ? "Đang trong giờ nhập" : "Được ủy quyền · 30 phút";
+            ? "Đang khóa"
+            : "Được ủy quyền · 30 phút";
           updateClocks();
-        }
-
-        function refreshGate() {
-          if (state.gateRefreshing) return;
-          state.gateRefreshing = true;
-          apiCall("getAppState", { token: state.token }).then(applyGate).catch(function(error) {
-            showToast("Không thể kiểm tra trạng thái khóa: " + error.message, true);
-          }).finally(function() {
-            state.gateRefreshing = false;
-          });
         }
 
         function updateClocks() {
@@ -326,18 +314,28 @@
               : clock.toLocaleTimeString("vi-VN", { hour12: false });
             return;
           }
-          if (state.gate.authorizedUntil && !state.gate.scheduled) {
+          if (state.gate.authorizedUntil) {
             const left = Math.max(0, state.gate.authorizedUntil - serverNow);
+            if (left <= 0) {
+              state.token = "";
+              sessionStorage.removeItem("dorm-score-token");
+              state.gate.open = false;
+              state.gate.authorizedUntil = null;
+              applyGate(state.gate);
+              showToast("Phiên ủy quyền đã hết hạn. Hãy nhập key để mở lại.", true);
+              return;
+            }
             const minutes = Math.floor(left / 60000);
             const seconds = Math.floor(left % 60000 / 1000);
             $("statusText").textContent = "Ủy quyền · " + String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
           } else {
-            $("statusText").textContent = "Đang trong giờ nhập";
+            $("statusText").textContent = "Đang khóa";
           }
         }
 
         function requestUnlock() {
           const button = $("submitUnlock");
+          if (button.disabled) return;
           button.disabled = true;
           button.textContent = "Đang kiểm tra…";
           apiCall("authorizeUnlock", { key: $("unlockKey").value }).then(function(result) {
@@ -349,10 +347,7 @@
               $("lockError").textContent = "Key sai. Liên hệ Khôi Vĩ 10A2 để ủy quyền.";
               return;
             }
-            state.token = result.token;
-            sessionStorage.setItem("dorm-score-token", result.token);
-            state.gate = { open: true, scheduled: false, authorizedUntil: result.expiresAt, serverNow: Date.now(), receivedAt: Date.now() };
-            applyGate(state.gate);
+            initializeApp(result.appState, result.token, result.expiresAt);
             showToast("Đã mở giao diện. Bạn có 30 phút để nhập và lưu dữ liệu.");
           }).catch(function(error) {
             button.disabled = false;
@@ -438,8 +433,5 @@
           return escapeHtml(value);
         }
 
-        window.setInterval(function() {
-          if (state.gate && state.gate.open && state.gate.authorizedUntil && Date.now() >= state.gate.authorizedUntil) refreshGate();
-        }, 1000);
         start();
       })();
