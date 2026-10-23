@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light">
+    <title>Sổ chấm điểm phòng ở</title>
+    <?!= include('Styles'); ?>
+  </head>
+  <body>
+    <main id="app" hidden>
+      <div class="shell">
+        <header class="topbar">
+          <div class="brand"><div class="brand-mark" aria-hidden="true">✓</div><div>Sổ chấm điểm<small>Ký túc xá · Năm học 2026–2027</small></div></div>
+          <div class="status-pill"><span class="status-dot"></span><span id="statusText">Đang trong giờ nhập</span></div>
+        </header>
+        <section class="hero">
+          <div><div class="eyebrow">Theo dõi thi đua phòng ở</div><h1>Chấm điểm tuần</h1><p class="subtitle">Nhập điểm cho các phòng, rà soát một lượt rồi xác nhận lưu.</p></div>
+          <div class="year-chip">NĂM HỌC<br>2026 — 2027</div>
+        </section>
+        <div class="schedule"><div class="schedule-icon" aria-hidden="true">◷</div><div><strong>Khung giờ nhập dữ liệu</strong><br>Buổi sáng 06:00–07:00 &nbsp;·&nbsp; Buổi chiều 14:30–16:00</div></div>
+        <section class="meta-card" aria-labelledby="period-heading">
+          <div class="section-heading"><h2 id="period-heading">Thông tin đợt chấm</h2><span>Dữ liệu sẽ được lưu vào 4 sheet theo nhóm phòng</span></div>
+          <div class="meta-grid">
+            <div class="field"><label for="week">Tuần *</label><input id="week" inputmode="numeric" type="number" min="1" max="52" placeholder="Ví dụ: 12"></div>
+            <div class="field"><label for="fromDate">Từ ngày *</label><input id="fromDate" type="date"></div>
+            <div class="field"><label for="toDate">Đến ngày *</label><input id="toDate" type="date"></div>
+            <div class="field"><label for="teacher">Người chấm *</label><input id="teacher" maxlength="100" placeholder="Họ và tên"></div>
+            <div class="field"><label for="leader">Lãnh đạo trực</label><input id="leader" maxlength="100" placeholder="Họ và tên (nếu có)"></div>
+          </div>
+        </section>
+        <section aria-labelledby="group-title">
+          <div class="group-head"><div><h2 id="group-title">Các phòng được phân công</h2><p>Chấm đủ 34 phòng; mục chưa có điểm có thể ghi “chưa chấm”.</p></div><div class="progress-label" id="progressLabel">0 / 408 tiêu chí</div></div>
+          <div class="progress-track" role="progressbar" aria-label="Tiến độ nhập điểm" aria-valuemin="0" aria-valuemax="408" aria-valuenow="0"><div class="progress-fill" id="progressFill"></div></div>
+          <nav class="tabs" id="tabs" aria-label="Nhóm phòng"></nav>
+          <div class="group-head" style="margin:17px 0 12px"><div><h2 id="activeGroupName"></h2><p id="activeGroupHint"></p></div></div>
+          <div class="room-list" id="roomList"></div>
+        </section>
+        <section class="action-bar">
+          <div class="action-copy" id="saveHint">Hoàn tất thông tin đợt chấm và 408 tiêu chí để xác nhận lưu một lần.</div>
+          <button class="primary" id="reviewButton" type="button" disabled>Xem lại &amp; xác nhận lưu</button>
+        </section>
+        <div class="footer">Bản nháp được lưu tạm trên thiết bị này; dữ liệu chỉ lên Google Sheets sau khi xác nhận.</div>
+      </div>
+    </main>
+
+    <section class="overlay" id="lockScreen" hidden aria-labelledby="lockTitle">
+      <div class="lock-orb" aria-hidden="true"></div>
+      <div class="lock-card">
+        <div class="lock-icon" aria-hidden="true">◷</div>
+        <div class="eyebrow" style="color:#b7cfc2">Sổ chấm điểm ký túc xá</div>
+        <h2 id="lockTitle">Đang ngoài giờ nhập</h2>
+        <p>Giao diện chấm điểm sẽ mở trong các khung giờ quy định. Bản nháp chưa lưu của bạn vẫn được giữ trên thiết bị.</p>
+        <div class="clock" id="lockClock">--:--:--</div>
+        <div class="lock-schedule"><span>Buổi sáng · 06:00–07:00</span><span>Buổi chiều · 14:30–16:00</span></div>
+        <button class="unlock-btn" id="unlockButton" type="button">Ủy quyền mở</button>
+        <p class="lock-error" id="lockError" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="dialog-backdrop" id="unlockDialog" hidden role="dialog" aria-modal="true" aria-labelledby="unlockTitle">
+      <div class="dialog">
+        <h2 id="unlockTitle">Mở giao diện nhập điểm</h2>
+        <p>Nhập mã ủy quyền. Khi được mở, bạn có 30 phút để làm việc.</p>
+        <div class="field"><label for="unlockKey">Mã ủy quyền</label><input id="unlockKey" type="password" autocomplete="off" placeholder="Nhập key"></div>
+        <div class="dialog-actions"><button class="secondary" id="cancelUnlock" type="button">Hủy</button><button class="primary" id="submitUnlock" type="button">Xác nhận</button></div>
+      </div>
+    </section>
+
+    <section class="dialog-backdrop" id="confirmDialog" hidden role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="dialog">
+        <h2 id="confirmTitle">Xác nhận lưu dữ liệu?</h2>
+        <p id="confirmSummary"></p>
+        <div class="dialog-actions"><button class="secondary" id="cancelSave" type="button">Quay lại kiểm tra</button><button class="primary" id="confirmSave" type="button">Lưu lên Google Sheets</button></div>
+      </div>
+    </section>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <section id="fatal" class="fatal" hidden><h2>Chưa thể mở sổ chấm điểm</h2><div id="fatalMessage"></div></section>
+
+    <?!= include('Scripts'); ?>
+  </body>
+</html>

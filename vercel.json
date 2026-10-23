@@ -1,0 +1,9 @@
+{
+  "buildCommand": "node build-vercel.js",
+  "outputDirectory": "public",
+  "functions": {
+    "api/gas.js": {
+      "maxDuration": 30
+    }
+  }
+}
