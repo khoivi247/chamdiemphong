@@ -38,6 +38,7 @@ module.exports = async function handler(request, response) {
     const gasResponse = await fetch(endpoint.toString(), {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
+      signal: AbortSignal.timeout(25000),
       body: JSON.stringify({
         action: body.action,
         token: body.token,
@@ -51,7 +52,9 @@ module.exports = async function handler(request, response) {
     try {
       result = JSON.parse(raw);
     } catch (error) {
-      throw new Error("Apps Script trả về phản hồi không phải JSON. Hãy kiểm tra URL triển khai /exec và quyền truy cập web app.");
+      throw new Error(
+        "Apps Script không trả JSON. Kiểm tra URL /exec, quyền truy cập Anyone và phiên bản Web App đã deploy."
+      );
     }
 
     if (!gasResponse.ok) {
@@ -65,7 +68,9 @@ module.exports = async function handler(request, response) {
     return response.status(200).json(result);
   } catch (error) {
     return response.status(502).json({
-      error: error && error.message ? error.message : "Không thể kết nối tới Apps Script."
+      error: error && error.name === "TimeoutError"
+        ? "Apps Script phản hồi quá chậm. Hãy thử lại sau ít phút."
+        : error && error.message ? error.message : "Không thể kết nối tới Apps Script."
     });
   }
 };
