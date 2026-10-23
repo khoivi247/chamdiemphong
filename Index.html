@@ -12,13 +12,13 @@
       <div class="shell">
         <header class="topbar">
           <div class="brand"><div class="brand-mark" aria-hidden="true">✓</div><div>Sổ chấm điểm<small>Ký túc xá · Năm học 2026–2027</small></div></div>
-          <div class="status-pill"><span class="status-dot"></span><span id="statusText">Đang trong giờ nhập</span></div>
+          <div class="status-pill"><span class="status-dot"></span><span id="statusText">Đang khóa</span></div>
         </header>
         <section class="hero">
           <div><div class="eyebrow">Theo dõi thi đua phòng ở</div><h1>Chấm điểm tuần</h1><p class="subtitle">Nhập điểm cho các phòng, rà soát một lượt rồi xác nhận lưu.</p></div>
           <div class="year-chip">NĂM HỌC<br>2026 — 2027</div>
         </section>
-        <div class="schedule"><div class="schedule-icon" aria-hidden="true">◷</div><div><strong>Khung giờ nhập dữ liệu</strong><br>Buổi sáng 06:00–07:00 &nbsp;·&nbsp; Buổi chiều 14:30–16:00</div></div>
+        <div class="schedule"><div class="schedule-icon" aria-hidden="true">◷</div><div><strong>Sổ chấm đang khóa</strong><br>Nhập key để mở giao diện. Mỗi phiên làm việc có thời hạn 30 phút.</div></div>
         <section class="meta-card" aria-labelledby="period-heading">
           <div class="section-heading"><h2 id="period-heading">Thông tin đợt chấm</h2><span>Dữ liệu sẽ được lưu vào 4 sheet theo nhóm phòng</span></div>
           <div class="meta-grid">
@@ -44,16 +44,16 @@
       </div>
     </main>
 
-    <section class="overlay" id="lockScreen" hidden aria-labelledby="lockTitle">
+    <section class="overlay" id="lockScreen" aria-labelledby="lockTitle">
       <div class="lock-orb" aria-hidden="true"></div>
       <div class="lock-card">
         <div class="lock-icon" aria-hidden="true">◷</div>
         <div class="eyebrow" style="color:#b7cfc2">Sổ chấm điểm ký túc xá</div>
-        <h2 id="lockTitle">Đang ngoài giờ nhập</h2>
-        <p>Giao diện chấm điểm sẽ mở trong các khung giờ quy định. Bản nháp chưa lưu của bạn vẫn được giữ trên thiết bị.</p>
-        <div class="clock" id="lockClock">--:--:--</div>
-        <div class="lock-schedule"><span>Buổi sáng · 06:00–07:00</span><span>Buổi chiều · 14:30–16:00</span></div>
-        <button class="unlock-btn" id="unlockButton" type="button">Ủy quyền mở</button>
+        <h2 id="lockTitle">Đang kết nối sổ chấm</h2>
+        <p id="lockMessage">Nhập key để mở giao diện và bắt đầu nhập điểm.</p>
+        <div class="clock" id="lockClock">ĐANG KHÓA</div>
+        <div class="lock-schedule"><span>Nhập key để mở sổ chấm điểm</span><span>Phiên làm việc tối đa 30 phút</span></div>
+        <button class="unlock-btn" id="unlockButton" type="button">Nhập key để mở</button>
         <p class="lock-error" id="lockError" aria-live="polite"></p>
       </div>
     </section>
@@ -75,7 +75,11 @@
       </div>
     </section>
     <div id="toast" class="toast" role="status" hidden></div>
-    <section id="fatal" class="fatal" hidden><h2>Chưa thể mở sổ chấm điểm</h2><div id="fatalMessage"></div></section>
+    <section id="fatal" class="fatal" hidden>
+      <h2>Chưa thể mở sổ chấm điểm</h2>
+      <div id="fatalMessage"></div>
+      <button class="primary" id="retryButton" type="button" style="margin-top:16px">Thử kết nối lại</button>
+    </section>
 
     <?!= include('Scripts'); ?>
   </body>
