@@ -18,7 +18,7 @@
           <div><div class="eyebrow">Theo dõi thi đua phòng ở</div><h1>Chấm điểm tuần</h1><p class="subtitle">Nhập điểm cho các phòng, rà soát một lượt rồi xác nhận lưu.</p></div>
           <div class="year-chip">NĂM HỌC<br>2026 — 2027</div>
         </section>
-        <div class="schedule"><div class="schedule-icon" aria-hidden="true">◷</div><div><strong>Sổ chấm đang khóa</strong><br>Nhập key để mở giao diện. Mỗi phiên làm việc có thời hạn 30 phút.</div></div>
+        <div class="schedule"><div class="schedule-icon" aria-hidden="true">◷</div><div><strong>Khung giờ mở tự động · giờ Việt Nam</strong><br>06:00–07:00 &nbsp;·&nbsp; 14:30–16:00 &nbsp;·&nbsp; Ngoài giờ: nhập key để mở 45 phút.</div></div>
         <section class="meta-card" aria-labelledby="period-heading">
           <div class="section-heading"><h2 id="period-heading">Thông tin đợt chấm</h2><span>Dữ liệu sẽ được lưu vào 4 sheet theo nhóm phòng</span></div>
           <div class="meta-grid">
@@ -52,7 +52,7 @@
         <h2 id="lockTitle">Đang kết nối sổ chấm</h2>
         <p id="lockMessage">Nhập key để mở giao diện và bắt đầu nhập điểm.</p>
         <div class="clock" id="lockClock">ĐANG KHÓA</div>
-        <div class="lock-schedule"><span>Nhập key để mở sổ chấm điểm</span><span>Phiên làm việc tối đa 30 phút</span></div>
+        <div class="lock-schedule"><span>Giờ Việt Nam · 06:00–07:00</span><span>14:30–16:00 · key mở 45 phút</span></div>
         <button class="unlock-btn" id="unlockButton" type="button">Nhập key để mở</button>
         <p class="lock-error" id="lockError" aria-live="polite"></p>
       </div>
@@ -61,7 +61,7 @@
     <section class="dialog-backdrop" id="unlockDialog" hidden role="dialog" aria-modal="true" aria-labelledby="unlockTitle">
       <div class="dialog">
         <h2 id="unlockTitle">Mở giao diện nhập điểm</h2>
-        <p>Nhập mã ủy quyền. Khi được mở, bạn có 30 phút để làm việc.</p>
+        <p>Nhập mã ủy quyền. Khi được mở, bạn có 45 phút để làm việc.</p>
         <div class="field"><label for="unlockKey">Mã ủy quyền</label><input id="unlockKey" type="password" autocomplete="off" placeholder="Nhập key"></div>
         <div class="dialog-actions"><button class="secondary" id="cancelUnlock" type="button">Hủy</button><button class="primary" id="submitUnlock" type="button">Xác nhận</button></div>
       </div>
