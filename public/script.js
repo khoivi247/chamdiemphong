@@ -1,22 +1,37 @@
 (function() {
         "use strict";
-        const state = { groups: [], criteria: [], activeGroup: 0, draft: null, token: "", gate: null, requestPending: false, toastTimer: 0 };
+        const state = { groups: [], criteria: [], activeGroup: 0, draft: null, token: "", gate: null, requestPending: false, toastTimer: 0, eventsBound: false, scheduleRequestPending: false, lastScheduleAttempt: 0 };
         const DRAFT_KEY = "dorm-score-draft-v1";
         const $ = function(id) { return document.getElementById(id); };
 
         function apiCall(action, data) {
+          const controller = new AbortController();
+          const timeout = window.setTimeout(function() { controller.abort(); }, 27000);
           return fetch("/api/gas", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(Object.assign({ action: action }, data || {}))
+            body: JSON.stringify(Object.assign({ action: action }, data || {})),
+            signal: controller.signal
           }).then(function(response) {
-            return response.json().then(function(body) {
-              if (!response.ok || !body.ok) throw new Error(body.error || "API trả về lỗi.");
+            return response.text().then(function(text) {
+              let body;
+              try {
+                body = JSON.parse(text);
+              } catch (error) {
+                throw new Error("API trả về dữ liệu không hợp lệ (HTTP " + response.status + ").");
+              }
+              if (!response.ok || !body.ok) {
+                const failure = new Error(body.error || "API trả về lỗi (HTTP " + response.status + ").");
+                failure.status = response.status;
+                throw failure;
+              }
               return body.result;
             });
           }).catch(function(error) {
-            if (error instanceof SyntaxError) throw new Error("API trả về dữ liệu không hợp lệ.");
+            if (error.name === "AbortError") throw new Error("Kết nối quá thời gian chờ. Hãy thử lại.");
             throw error;
+          }).finally(function() {
+            window.clearTimeout(timeout);
           });
         }
 
@@ -66,21 +81,57 @@
         }
 
         function start() {
-          state.token = sessionStorage.getItem("dorm-score-token") || "";
-          apiCall("getAppState", { token: state.token }).then(function(data) {
-            state.groups = data.groups;
-            state.criteria = data.criteria;
-            state.draft = loadDraft();
-            fillMetaFields();
-            buildTabs();
-            renderGroup();
-            updateProgress();
-            $("app").hidden = true;
-            applyGate(data.gate);
-            window.setInterval(refreshGate, 20000);
-            window.setInterval(updateClocks, 1000);
+          $("fatal").hidden = true;
+          $("lockScreen").hidden = false;
+          $("app").hidden = true;
+          $("lockTitle").textContent = "Sổ chấm đang khóa";
+          $("lockMessage").textContent = "Nhập key để mở giao diện và bắt đầu nhập điểm.";
+          $("unlockButton").hidden = false;
+          $("unlockButton").textContent = "Nhập key để mở";
+          $("lockClock").textContent = "ĐANG KHÓA";
+          state.token = "";
+          state.gate = null;
+          sessionStorage.removeItem("dorm-score-token");
+          if (!state.scheduleTimer) {
+            state.scheduleTimer = window.setInterval(checkVietnamSchedule, 5000);
+          }
+          if (!state.eventsBound) {
             bindEvents();
-          }).catch(showFatal);
+            $("retryButton").addEventListener("click", start);
+            state.eventsBound = true;
+          }
+          checkVietnamSchedule();
+        }
+
+        function initializeApp(data, token, expiresAt) {
+          if (!data || !Array.isArray(data.groups) || !Array.isArray(data.criteria) || !data.gate) {
+            throw new Error("Máy chủ trả thiếu dữ liệu bảng chấm. Hãy deploy phiên bản Apps Script mới nhất.");
+          }
+          if (token !== null && (typeof token !== "string" || !token || !Number.isFinite(expiresAt))) {
+            throw new Error("Máy chủ không trả về phiên ủy quyền hợp lệ.");
+          }
+          state.groups = data.groups;
+          state.criteria = data.criteria;
+          state.draft = loadDraft();
+          fillMetaFields();
+          buildTabs();
+          renderGroup();
+          updateProgress();
+          $("app").hidden = false;
+          $("fatal").hidden = true;
+          $("lockScreen").hidden = true;
+          state.gate = Object.assign({}, data.gate, { receivedAt: Date.now() });
+          state.token = token || "";
+          state.gate.authorizedUntil = expiresAt === null ? data.gate.authorizedUntil : expiresAt;
+          if (token) {
+            sessionStorage.setItem("dorm-score-token", token);
+          } else {
+            sessionStorage.removeItem("dorm-score-token");
+          }
+          if (!state.expiryTimer) {
+            state.expiryTimer = window.setInterval(updateClocks, 1000);
+          }
+          applyGate(data.gate);
         }
 
         function buildTabs() {
@@ -230,38 +281,146 @@
         }
 
         function applyGate(gate) {
-          state.gate = Object.assign({}, gate, { receivedAt: Date.now() });
+          if (!gate || typeof gate.open !== "boolean" || typeof gate.serverNow !== "number" || !Number.isFinite(gate.serverNow)) {
+            throw new Error("Trạng thái khóa từ máy chủ không hợp lệ. Hãy kiểm tra và deploy lại phiên bản Apps Script mới nhất.");
+          }
+          if (gate.authorizedUntil !== null && (typeof gate.authorizedUntil !== "number" || !Number.isFinite(gate.authorizedUntil))) {
+            throw new Error("Thời hạn ủy quyền từ máy chủ không hợp lệ. Hãy deploy lại phiên bản Apps Script mới nhất.");
+          }
+          state.gate = Object.assign({}, gate, {
+            serverNow: gate.serverNow,
+            authorizedUntil: gate.authorizedUntil,
+            receivedAt: Date.now()
+          });
+          if (!gate.open && state.token) {
+            state.token = "";
+            sessionStorage.removeItem("dorm-score-token");
+          }
           $("app").hidden = !gate.open;
           $("lockScreen").hidden = gate.open;
-          $("statusText").textContent = gate.scheduled ? "Đang trong giờ nhập" : "Được ủy quyền · 30 phút";
+          $("unlockButton").hidden = gate.open;
+          $("lockTitle").textContent = "Sổ chấm đang khóa";
+          $("lockMessage").textContent = "Nhập key để mở giao diện và bắt đầu nhập điểm.";
+          $("lockClock").textContent = gate.open ? "ĐÃ MỞ" : "ĐANG KHÓA";
+          $("statusText").textContent = !gate.open
+            ? "Đang khóa"
+            : gate.scheduled ? "Đang trong khung giờ nhập"
+            : "Được ủy quyền · 45 phút";
           updateClocks();
         }
 
-        function refreshGate() {
-          apiCall("getAppState", { token: state.token }).then(applyGate).catch(function(error) {
-            showToast("Không thể kiểm tra trạng thái khóa: " + error.message, true);
+        function isVietnamScheduleOpen() {
+          const parts = new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23"
+          }).formatToParts(new Date());
+          const hour = Number(parts.find(function(part) { return part.type === "hour"; }).value);
+          const minute = Number(parts.find(function(part) { return part.type === "minute"; }).value);
+          const time = hour * 60 + minute;
+          return (time >= 360 && time < 420) || (time >= 870 && time < 960);
+        }
+
+        function checkVietnamSchedule() {
+          const scheduled = isVietnamScheduleOpen();
+          if (!scheduled) {
+            if (state.gate && state.gate.scheduled) {
+              state.gate.scheduled = false;
+              if (state.gate.authorizedUntil && state.gate.authorizedUntil > Date.now()) {
+                state.gate.open = true;
+                $("statusText").textContent = "Được ủy quyền · 45 phút";
+              } else {
+                lockForClosedSchedule();
+              }
+            }
+            return;
+          }
+
+          if (state.gate && state.gate.open) {
+            state.gate.scheduled = true;
+            return;
+          }
+          const now = Date.now();
+          if (state.scheduleRequestPending || now - state.lastScheduleAttempt < 15000) return;
+
+          state.scheduleRequestPending = true;
+          state.lastScheduleAttempt = now;
+          $("lockTitle").textContent = "Khung giờ nhập đang mở";
+          $("lockMessage").textContent = "Đang tải bảng chấm theo giờ Việt Nam…";
+          $("lockClock").textContent = "ĐANG MỞ";
+          apiCall("getAppState", { token: "" }).then(function(data) {
+            if (data && data.gate && data.gate.open && data.gate.scheduled) {
+              initializeApp(data, null, null);
+            } else {
+              $("lockMessage").textContent = "Trình duyệt đang trong giờ mở nhưng Apps Script báo ngoài giờ. Hãy cập nhật deployment Web App Apps Script lên phiên bản mới nhất; trang sẽ tự thử lại.";
+            }
+          }).catch(function(error) {
+            $("lockMessage").textContent = "Đang trong khung giờ mở nhưng không kết nối được Apps Script: " + error.message + ". Trang sẽ tự thử lại.";
+            showToast("Không thể tải bảng chấm tự động: " + error.message, true);
+          }).finally(function() {
+            state.scheduleRequestPending = false;
           });
+        }
+
+        function lockForClosedSchedule() {
+          state.gate.open = false;
+          state.gate.scheduled = false;
+          state.gate.authorizedUntil = null;
+          state.token = "";
+          sessionStorage.removeItem("dorm-score-token");
+          $("app").hidden = true;
+          $("lockScreen").hidden = false;
+          $("unlockButton").hidden = false;
+          $("lockTitle").textContent = "Sổ chấm đang khóa";
+          $("lockMessage").textContent = "Nhập key để mở giao diện. Bảng chấm tự mở lại trong khung giờ quy định.";
+          $("lockClock").textContent = "ĐANG KHÓA";
+          $("statusText").textContent = "Đang khóa";
         }
 
         function updateClocks() {
           if (!state.gate) return;
           const serverNow = state.gate.serverNow + (Date.now() - state.gate.receivedAt);
-          if (!state.gate.open) {
-            $("lockClock").textContent = new Date(serverNow).toLocaleTimeString("vi-VN", { hour12: false });
+          if (!Number.isFinite(serverNow)) {
+            showFatal(new Error("Không thể đọc giờ máy chủ. Hãy tải lại trang; nếu lỗi còn tiếp diễn, deploy lại Apps Script."));
             return;
           }
-          if (state.gate.authorizedUntil && !state.gate.scheduled) {
+          if (!state.gate.open) {
+            const clock = new Date(serverNow);
+            $("lockClock").textContent = Number.isNaN(clock.getTime())
+              ? "Giờ máy chủ không hợp lệ"
+              : clock.toLocaleTimeString("vi-VN", { hour12: false });
+            return;
+          }
+          if (state.gate.authorizedUntil) {
             const left = Math.max(0, state.gate.authorizedUntil - serverNow);
+            if (left <= 0) {
+              state.token = "";
+              sessionStorage.removeItem("dorm-score-token");
+              if (isVietnamScheduleOpen()) {
+                state.gate.open = true;
+                state.gate.scheduled = true;
+                state.gate.authorizedUntil = null;
+                $("statusText").textContent = "Đang trong khung giờ nhập";
+              } else {
+                lockForClosedSchedule();
+                showToast("Phiên ủy quyền đã hết hạn. Hãy nhập key để mở lại.", true);
+              }
+              return;
+            }
             const minutes = Math.floor(left / 60000);
             const seconds = Math.floor(left % 60000 / 1000);
             $("statusText").textContent = "Ủy quyền · " + String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
           } else {
-            $("statusText").textContent = "Đang trong giờ nhập";
+            $("statusText").textContent = state.gate.scheduled
+              ? "Đang trong khung giờ nhập"
+              : "Đang khóa";
           }
         }
 
         function requestUnlock() {
           const button = $("submitUnlock");
+          if (button.disabled) return;
           button.disabled = true;
           button.textContent = "Đang kiểm tra…";
           apiCall("authorizeUnlock", { key: $("unlockKey").value }).then(function(result) {
@@ -273,11 +432,8 @@
               $("lockError").textContent = "Key sai. Liên hệ Khôi Vĩ 10A2 để ủy quyền.";
               return;
             }
-            state.token = result.token;
-            sessionStorage.setItem("dorm-score-token", result.token);
-            state.gate = { open: true, scheduled: false, authorizedUntil: result.expiresAt, serverNow: Date.now(), receivedAt: Date.now() };
-            applyGate(state.gate);
-            showToast("Đã mở giao diện. Bạn có 30 phút để nhập và lưu dữ liệu.");
+            initializeApp(result.appState, result.token, result.expiresAt);
+            showToast("Đã mở giao diện. Bạn có 45 phút để nhập và lưu dữ liệu.");
           }).catch(function(error) {
             button.disabled = false;
             button.textContent = "Xác nhận";
@@ -346,7 +502,9 @@
         function showFatal(error) {
           $("app").hidden = true;
           $("lockScreen").hidden = true;
-          $("fatalMessage").textContent = error && error.message ? error.message : String(error);
+          $("fatalMessage").textContent = error && error.message
+            ? error.message
+            : "Không thể kết nối đến máy chủ. Hãy thử lại.";
           $("fatal").hidden = false;
         }
 
@@ -360,8 +518,5 @@
           return escapeHtml(value);
         }
 
-        window.setInterval(function() {
-          if (state.gate && state.gate.open && state.gate.authorizedUntil && Date.now() >= state.gate.authorizedUntil) refreshGate();
-        }, 1000);
         start();
       })();
